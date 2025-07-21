@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>Voxel Viewer (Floating Sliders)</title>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://js.arcgis.com/4.32/"></script>
+    <style>
+        html, body { margin:0; padding:0; height:100vh; width:100vw; font-family:Arial,sans-serif; background:#1a1a1a; color:white; overflow:hidden; }
+        body { box-sizing: border-box; }
+        #mainContainer { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+        #viewDiv { height: 100vh; width: 100vw; position: relative; min-height: 280px; max-height: 100vh; overflow: hidden; transition: height 0.3s cubic-bezier(.33,1.2,.68,1);}
+        #floatingSliders { position: fixed; top: 250px; left: unset; right: 26px; z-index: 95; background: rgba(35,35,45,0.98); box-shadow: 0 6px 32px #000b; border-radius: 18px; padding: 18px 18px 12px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; transition: opacity 0.21s; min-width: 230px; opacity: 1; }
+        #floatingSliders.hidden { opacity: 0; pointer-events: none; }
+        .sliderLabel { color: #fff; font-size: 14px; font-weight: 500; margin-bottom: 2px; margin-right: 5px; display: flex; flex-direction: column; gap: 3px;}
+        .sliderRow { display: flex; align-items: center; gap: 9px; width: 100%;}
+        .sliderRow input[type="range"] { width: 120px; background: #333; border-radius: 9px;}
+        .sliderRow span { font-size: 14px; min-width: 42px; text-align: right; color: #b3e3ff;}
+        #attachmentsPanel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99; width: 100vw; height: 42vh; max-height: 48vh; min-height: 260px; background: #111; box-sizing: border-box; box-shadow: 0 -16px 48px #000e; border-top-left-radius: 20px; border-top-right-radius: 20px; transition: transform 0.34s cubic-bezier(.33,1.2,.68,1), box-shadow 0.3s, opacity 0.24s; display: flex; align-items: stretch; justify-content: stretch; transform: translateY(102%); pointer-events: none; opacity: 0;}
+        #attachmentsPanel.open { transform: translateY(0%); pointer-events: auto; opacity: 1;}
+        #drawerHandle { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 48px; height: 18px; background: none; border: none; z-index: 3; cursor: pointer; outline: none; display: flex; flex-direction: column; align-items: center;}
+        #drawerHandleBar { width: 34px; height: 6px; border-radius: 5px; background: #444; margin: 0 0 2px 0; box-shadow: 0 1px 6px #000a; transition: background 0.22s;}
+        #drawerHandle:active #drawerHandleBar { background: #888; }
+        #imageContainer { position: relative; width: 100%; height: 100%; overflow: hidden; background: #333; cursor: grab; user-select: none; border-top-left-radius: 20px; border-top-right-radius: 20px; padding-top: 30px; box-sizing: border-box;}
+        #attachmentImage { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); transition: transform 0.15s cubic-bezier(.4,0,.2,1); will-change: transform; box-shadow: 0 2px 16px #0005; background: #333; user-select: none; pointer-events: none; display: none; max-width: none; max-height: none;}
+        #floatingButtons { position: absolute; right: 8px; top: 24px; z-index: 8; display: flex; flex-direction: column; gap: 10px;}
+        #floatingButtons button { background-color: rgba(0,0,0,0.6); color: white; border: none; padding: 8px 12px; font-size: 18px; border-radius: 4px; cursor: pointer; width: 42px; height: 42px; font-weight: bold; transition: background 0.2s;}
+        #floatingButtons button:active {background: rgba(80,80,80,0.95);}
+        #floatingButtons button:disabled {opacity: 0.5; cursor: default;}
+        #viewButtons { position:absolute; top:24px; left:80px; z-index:5; display:flex; gap:10px;}
+        #viewButtons button { background-color:rgba(0,0,0,0.6); color:white; border:none; padding:8px 14px; font-size:14px; border-radius:4px; cursor:pointer; transition:background 0.2s;}
+        #viewButtons button:hover {background-color:rgba(80,80,80,0.9);}
+        #btn3D.blink { animation: blink-3d-btn 1s linear infinite; border: 2px solid #42a5ff; box-shadow: 0 0 12px #2196f3; background-color: #222b4d !important; color: #fff;}
+        @keyframes blink-3d-btn { 0%, 100% { filter: brightness(1.3); } 50% { filter: brightness(2.2); } }
+        #infoPanelContainer { position: absolute; top: 74px; left: 80px; z-index: 10; background-color: rgba(50,50,50,0.85); color: #fff; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); overflow: hidden; width: 42px; height: 42px; transition: width 0.3s ease-out, height 0.3s ease-out, background-color 0.2s; display: flex; flex-direction: column; justify-content: flex-start; }
+        #infoPanelContainer.expanded { width: 250px; height: auto; max-height: 200px; }
+        #infoPanelToggle { background: rgba(0,0,0,0.6); border: none; color: #fff; padding: 0; font-size: 18px; width: 42px; height: 42px; text-align: center; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; transition: background 0.2s; flex-shrink: 0;}
+        #infoPanelToggle:hover { background-color: rgba(80,80,80,0.9);}
+        #infoPanelContent { padding: 10px 15px; font-size: 14px; transition: opacity 0.3s ease-out, padding 0.3s ease-out; opacity: 1; box-sizing: border-box;}
+        #infoPanelContent.collapsed { padding-top: 0; padding-bottom: 0; opacity: 0; pointer-events: none; display: none;}
+        #splashScreen {position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(30,30,40,0.96); display:flex; align-items:center; justify-content:center; z-index:10000; transition:opacity 0.4s cubic-bezier(0.4,0,0.2,1); cursor:pointer;}
+        #splashScreenContent {max-width:460px; background:rgba(32,38,61,0.99); box-shadow:0 6px 24px 0 rgba(10,18,30,0.45); padding:38px 34px 32px 34px; border-radius:16px; text-align:center; color:#fafcff; font-size:1.18em; letter-spacing:0.01em; line-height:1.55; border:1px solid #353b4d; user-select:none;}
+        #splashScreenContent strong {color:#42a5ff; font-size:1.05em;}
+        #splashScreen .splash-btn {display:inline-block; margin-top:26px; padding:8px 30px; font-size:1.07em; background:#2684ff; color:#fff; border:none; border-radius:6px; cursor:pointer; box-shadow:0 2px 12px 0 rgba(32,32,64,0.18); letter-spacing:0.04em; transition:background 0.2s;}
+        #splashScreen .splash-btn:hover {background:#1867c0;}
+        #loadingScreen {position:fixed; z-index:9999; top:0; left:0; width:100vw; height:100vh; background:rgba(25,25,25,0.97); display:flex; align-items:center; justify-content:center; flex-direction:column; transition:opacity 0.4s cubic-bezier(0.4,0,0.2,1);}
+        #loadingScreen.hidden {opacity:0; pointer-events:none;}
+        .loader {border:6px solid #383838; border-top:6px solid #1a86ff; border-radius:50%; width:58px; height:58px; animation:spin 1s linear infinite; margin-bottom:25px;}
+        .loadingText {font-size:1.3em; color:#fff; letter-spacing:1px;}
+        #voxelMiniLoading { position:fixed; bottom:34px; right:42px; z-index:12001; display:flex; align-items:center; gap:16px; background:rgba(34,34,38,0.85); border-radius:16px; padding:10px 20px; box-shadow:0 2px 12px rgba(0,0,0,0.23); min-width:150px; transition:opacity 0.3s cubic-bezier(0.4,0,0.2,1); opacity:1;}
+        #voxelMiniLoading.hide { opacity:0; pointer-events:none;}
+        #voxelMiniSpinner { border:4px solid #353a43; border-top:4px solid #42a5ff; border-radius:50%; width:28px; height:28px; animation:spin 1s linear infinite;}
+        @keyframes spin {100%{transform:rotate(360deg);}}
+        #customVoxelLegend {
+            position: absolute;
+            top: 290px;
+            left: 20px;
+            z-index: 30;
+            background: #222;
+            color: #fff;
+            padding: 14px 22px 14px 18px;
+            border-radius: 10px;
+            box-shadow: 0 2px 16px #0006;
+            font-size: 15px;
+            min-width: 94px;
+            min-height: 210px;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        #customVoxelLegend .legend-title {
+            font-weight: bold;
+            font-size: 16px;
+            text-align: center;
+            line-height: 1.13;
+            margin-bottom: 5px;
+            width: 100%;
+            letter-spacing: 0.01em;
+        }
+
+        #customVoxelLegend .legend-subtitle {
+            font-weight: normal;
+            font-size: 13px;
+            letter-spacing: 0.01em;
+            color: #e0e0e0;
+            margin-top: 1px;
+        }
+
+        #customVoxelLegend .legend-bar-container {
+            position: relative;
+            height: 170px;
+            width: 24px;
+            margin-top: 2px;
+            margin-bottom: 3px;
+        }
+
+        #customVoxelLegend .legend-bar {
+            width: 16px;
+            height: 170px;
+            border-radius: 6px;
+            /* UPDATED GRADIENT COLORS FROM USER'S SPECIFICATION */
+            background: linear-gradient(to bottom,
+                #8000FF 0%,   /* Highest Value - Purple/Indigo */
+                #FF0000 14%,  /* Red */
+                #E6A100 28%,  /* Orange/Brown */
+                #FFFF73 42%,  /* Yellow */
+                #05D800 56%,  /* Green */
+                #77FCE6 70%,  /* Light Cyan/Turquoise */
+                #8FBFFC 84%,  /* Light Blue */
+                #0012D1 100%  /* Lowest Value - Dark Blue */
+            );
+            border: 1.2px solid #222;
+            box-shadow: 0 2px 8px #0005;
+            position: absolute;
+            left: 0; top: 0;
+        }
+
+        #customVoxelLegend .legend-tick {
+            position: absolute;
+            left: 22px;
+            font-size: 14px;
+            white-space: nowrap;
+            font-family: Arial, sans-serif;
+            font-weight: 400;
+            text-align: left;
+            line-height: 1;
+            height: 17px;
+            text-shadow: 0 1px 2px #000b;
+            transform: translateY(-50%);
+        }
+        /* TICK POSITIONS AND VALUES REMAIN THE SAME, CORRESPONDING TO THE NEW GRADIENT */
+        #customVoxelLegend .legend-tick:nth-child(2) { top: 0%; }    /* 500 */
+        #customVoxelLegend .legend-tick:nth-child(3) { top: 20%; }   /* 400 */
+        #customVoxelLegend .legend-tick:nth-child(4) { top: 40%; }   /* 300 */
+        #customVoxelLegend .legend-tick:nth-child(5) { top: 60%; }   /* 200 */
+        #customVoxelLegend .legend-tick:nth-child(6) { top: 80%; }   /* 100 */
+        #customVoxelLegend .legend-tick:nth-child(7) { top: 100%; }  /* 50 */
+
+        /* New styles for multipatch and attachment loading spinners */
+        #multipatchLoading, #attachmentLoading {
+            position:fixed;
+            bottom:34px; /* Adjust position as needed */
+            left:42px; /* Adjust position as needed */
+            z-index:12001;
+            display:flex;
+            align-items:center;
+            gap:16px;
+            background:rgba(34,34,38,0.85);
+            border-radius:16px;
+            padding:10px 20px;
+            box-shadow:0 2px 12px rgba(0,0,0,0.23);
+            min-width:150px;
+            transition:opacity 0.3s cubic-bezier(0.4,0,0.2,1);
+            opacity:1;
+        }
+        #multipatchLoading.hide, #attachmentLoading.hide {
+            opacity:0;
+            pointer-events:none;
+        }
+        #multipatchSpinner, #attachmentSpinner {
+            border:4px solid #353a43;
+            border-top:4px solid #42a5ff;
+            border-radius:50%;
+            width:28px;
+            height:28px;
+            animation:spin 1s linear infinite;
+        }
+
+        /* Removed map controls styles as the div is removed */
+        /*
+        #mapControls {
+            position: absolute;
+            top: 120px;
+            left: 80px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #mapControls button {
+            background-color: rgba(0,0,0,0.6);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            font-size: 18px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 42px;
+            height: 42px;
+            font-weight: bold;
+            transition: background 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #mapControls button:hover {
+            background-color: rgba(80,80,80,0.9);
+        }
+        */
+
+        @media (max-width: 620px) {
+            #floatingSliders { top: 90px; right: 10px; left: 10px; min-width: 0; width: calc(100vw - 24px); }
+            #viewButtons { top: 10px; left: 65px; }
+            #infoPanelContainer { top: 60px; left: 10px; width: 42px; height: 42px; }
+            #infoPanelContainer.expanded { width: calc(100vw - 24px); }
+            #customVoxelLegend { top: 120px; left: 10px; }
+            /* #mapControls { top: 10px; left: 10px; flex-direction: row; } */ /* Removed */
+        </style>
+</head>
+<body>
+    <div id="mainContainer">
+        <div id="splashScreen">
+            <div id="splashScreenContent">
+                <strong>About this app</strong>
+                <div style="margin-top:14px; font-size:1.04em;">
+                    This interactive tool enables the public to view and interact with data from an AEM survey conducted between Dalby and Cecil Plains.<br><br>
+                    Users can navigate and click transects to display the geoelectrical conductivity AEM profiles. For advanced subsurface visualisation, use the sliders to explore the cross-sections in 3D.
+                </div>
+                <button class="splash-btn">Click to continue</button>
+            </div>
+        </div>
+        <div id="loadingScreen">
+            <div class="loader"></div>
+            <div class="loadingText">Loading scene...</div>
+        </div>
+        <div id="voxelMiniLoading" class="hide">
+            <div id="voxelMiniSpinner"></div>
+            <span style="margin-left:7px;">Loading voxel...</span>
+        </div>
+
+        <div id="multipatchLoading" class="hide">
+            <div id="multipatchSpinner"></div>
+            <span style="margin-left:7px;">Loading transect data...</span>
+        </div>
+
+        <div id="attachmentLoading" class="hide">
+            <div id="attachmentSpinner"></div>
+            <span style="margin-left:7px;">Loading image...</span>
+        </div>
+
+        <div id="customVoxelLegend">
+            <div class="legend-title">
+                Electrical<br>conductivity<br>
+                <span class="legend-subtitle">(mS/m)</span>
+            </div>
+            <div class="legend-bar-container">
+                <div class="legend-bar"></div>
+                <div class="legend-tick" style="top: 0%;">500</div>
+                <div class="legend-tick" style="top: 20%;">400</div>
+                <div class="legend-tick" style="top: 40%;">300</div>
+                <div class="legend-tick" style="top: 60%;">200</div>
+                <div class="legend-tick" style="top: 80%;">100</div>
+                <div class="legend-tick" style="top: 100%;">50</div>
+            </div>
+        </div>
+        <div id="viewDiv">
+            <div id="viewButtons">
+                <button onclick="setView2D()">KML data</button>
+                <button id="btn3D" onclick="setView3D()">Voxel data</button>
+                <button onclick="resetCameraOrientation()">Reset view</button>
+                <a href="https://www.ogia.water.qld.gov.au/__data/assets/pdf_file/0004/2042977/acquisition-interpretation-aem-ca.pdf" target="_blank">
+                    <button>AEM report (PDF) <i class="fas fa-external-link-alt" style="margin-left: 5px;"></i></button>
+                </a>
+            </div>
+            <div id="infoPanelContainer">
+                <button id="infoPanelToggle" title="Information box">
+                    <span id="infoIcon">i</span>
+                </button>
+                <div id="infoPanelContent" class="collapsed">
+                    <p><b>In Voxel data view, click on the cross-section to query electrical conductivity and elevation values.</b></p>
+                    <p><a href="https://www.ogia.water.qld.gov.au/__data/assets/pdf_file/0006/2059170/aem-data-visualisation-tool-readme.pdf" target="_blank" style="color:#42a5ff; text-decoration:underline;">OGIA website</a></p>
+                </div>
+            </div>
+        </div>
+        <div id="floatingSliders" class="hidden">
+            <div class="sliderLabel">Z slice (elevation, mAHD)
+                <div class="sliderRow">
+                    <input type="range" id="sliceZAxisSlider" min="0">
+                    <span id="zElevationValue">-- m</span>
+                </div>
+            </div>
+            <div class="sliderLabel">Y slice (← N/S →)
+                <div class="sliderRow">
+                    <input type="range" id="sliceYAxisSlider" min="0">
+                </div>
+            </div>
+            <div class="sliderLabel">Vertical exaggeration
+                <div class="sliderRow">
+                    <input type="range" id="exaggerationSlider" min="1" max="5" value="1">
+                    <span id="exaggerationValue">1</span>
+                </div>
+            </div>
+        </div>
+        <div id="attachmentsPanel">
+            <button id="drawerHandle" aria-label="Hide attachment panel">
+                <span id="drawerHandleBar"></span>
+            </button>
+            <div id="imageContainer">
+                <img id="attachmentImage" />
+            </div>
+            <div id="floatingButtons">
+                <button id="zoomInBtn" title="Zoom in">+</button>
+                <button id="zoomOutBtn" title="Zoom out">−</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.getElementById("splashScreen").onclick = function() {
+            this.style.opacity = "0";
+            setTimeout(() => { this.style.display = "none"; }, 400);
+        };
+        document.querySelector("#splashScreen .splash-btn").onclick = function(e) {
+            e.stopPropagation(); document.getElementById("splashScreen").click();
+        };
+        window.addEventListener("DOMContentLoaded", function () {
+            var btn3D = document.getElementById("btn3D");
+            btn3D.classList.add("blink");
+            setTimeout(function () { btn3D.classList.remove("blink"); }, 15000);
+
+            // Info panel logic
+            const infoPanelContainer = document.getElementById('infoPanelContainer');
+            const infoPanelToggle = document.getElementById('infoPanelToggle');
+            const infoPanelContent = document.getElementById('infoPanelContent');
+            const infoIcon = document.getElementById('infoIcon');
+
+            infoPanelContent.classList.add('collapsed');
+            infoPanelContainer.classList.remove('expanded');
+            infoIcon.textContent = 'i';
+
+            infoPanelToggle.onclick = function() {
+                const isCollapsed = infoPanelContent.classList.contains('collapsed');
+                if (isCollapsed) {
+                    infoPanelContainer.classList.add('expanded');
+                    infoPanelContent.classList.remove('collapsed');
+                    infoIcon.innerHTML = '&times;';
+                } else {
+                    infoPanelContainer.classList.remove('expanded');
+                    infoPanelContent.classList.add('collapsed');
+                    infoIcon.textContent = 'i';
+                }
+            };
+
+            // Removed map control buttons (pan, rotate) logic as the div is removed
+            /*
+            document.getElementById('panBtn').onclick = function() {
+                console.log('Toggle to pan clicked!');
+                if (view) { view.navigation.navigationToggle = "pan"; }
+            };
+            document.getElementById('rotateBtn').onclick = function() {
+                console.log('Toggle to rotate clicked!');
+                if (view) { view.navigation.navigationToggle = "rotate"; }
+            };
+            */
+            // The "Reset Map Orientation to the North" button already calls resetCameraOrientation()
+        });
+
+        function showLoadingScreen() {
+            document.getElementById("loadingScreen").style.display = "flex";
+            document.getElementById("loadingScreen").classList.remove("hidden");
+        }
+        function hideLoadingScreen() {
+            document.getElementById("loadingScreen").classList.add("hidden");
+            setTimeout(() => document.getElementById("loadingScreen").style.display = "none", 400);
+        }
+        let voxelSpinnerTimer = null;
+        function showVoxelMiniLoading() {
+            document.getElementById("voxelMiniLoading").classList.remove("hide");
+            if (voxelSpinnerTimer) { clearTimeout(voxelSpinnerTimer); voxelSpinnerTimer = null; }
+        }
+        function hideVoxelMiniLoading() {
+            document.getElementById("voxelMiniLoading").classList.add("hide");
+            if (voxelSpinnerTimer) { clearTimeout(voxelSpinnerTimer); voxelSpinnerTimer = null; }
+        }
+
+        // New Loading Indicator Functions
+        function showMultipatchLoading() {
+            document.getElementById("multipatchLoading").classList.remove("hide");
+        }
+        function hideMultipatchLoading() {
+            document.getElementById("multipatchLoading").classList.add("hide");
+        }
+
+        function showAttachmentLoading() {
+            document.getElementById("attachmentLoading").classList.remove("hide");
+        }
+        function hideAttachmentLoading() {
+            document.getElementById("attachmentLoading").classList.add("hide");
+        }
+
+        let view, scene, voxelLayer = null, multipatchLayer = null;
+        let zSlice, ySlice, zMax = 0, yMax = 0;
+        let initialCameraPosition;
+        let highlightHandle;
+        let clickHighlightHandle; // New handle for click highlights
+        let is3DMode = false;  // <-- Track view mode
+
+        function setSliders(mode, enabled) {
+            const zSlider = document.getElementById("sliceZAxisSlider");
+            const ySlider = document.getElementById("sliceYAxisSlider");
+            const exaggerationSlider = document.getElementById("exaggerationSlider");
+            const exaggerationValue = document.getElementById("exaggerationValue");
+            const zLabel = document.getElementById("zElevationValue");
+            if (mode === "max") {
+                zSlider.value = zMax; ySlider.value = yMax; exaggerationSlider.value = 5; exaggerationValue.textContent = 5;
+            } else {
+                zSlider.value = 0; ySlider.value = 0; exaggerationSlider.value = 1; exaggerationValue.textContent = 1; zLabel.textContent = "-- m";
+            }
+            zSlider.disabled = ySlider.disabled = exaggerationSlider.disabled = !enabled;
+            zSlider.style.opacity = ySlider.style.opacity = exaggerationSlider.style.opacity = enabled ? "1" : "0.4";
+            zSlider.style.pointerEvents = ySlider.style.pointerEvents = exaggerationSlider.style.pointerEvents = enabled ? "auto" : "none";
+        }
+        function setNavigation2D() {
+            if (view) {
+                view.navigation.mode = "classic";
+                // Allow full tilt for 2D but 0 for default reset - reset will handle specific camera
+                view.constraints.tilt = { min: 0, max: 180 };
+                view.constraints.heading = { min: -180, max: 180 };
+            }
+        }
+        function setNavigation3D() {
+            if (view) {
+                view.navigation.mode = "orbit";
+                view.constraints.tilt = { min: 0, max: 90 };
+                view.constraints.heading = { min: 0, max: 360 };
+            }
+        }
+        function resetCameraOrientation() {
+            if (view && initialCameraPosition) {
+                // Set the camera to the initial scene's camera (no tilt, specific heading if default is north)
+                view.goTo(initialCameraPosition, { duration: 1000 }).then(() => {
+                    // After reset, ensure navigation mode matches current view type
+                    if (is3DMode) {
+                        setNavigation3D();
+                    } else {
+                        setNavigation2D();
+                    }
+                });
+            }
+        }
+        const floatingSliders = document.getElementById('floatingSliders');
+
+        require([
+            "esri/WebScene",
+            "esri/views/SceneView",
+            "esri/layers/voxel/VoxelSlice",
+            "esri/layers/VoxelLayer",
+            "esri/widgets/Legend",
+            "esri/core/reactiveUtils"
+        ], function(WebScene, SceneView, VoxelSlice, VoxelLayer, Legend, reactiveUtils) {
+            voxelLayer = new VoxelLayer({
+                portalItem: { id: "3cbe5783875c4f23bf079367d65a24cd" },
+                visible: true
+            });
+            voxelLayer.popupEnabled = true;
+            voxelLayer.popupTemplate = {
+                title: "Voxel attributes",
+                content: [{
+                    type: "fields",
+                    fieldInfos: [
+                        { fieldName: "Conductivity", label: "Electrical conductivity (mS/m)", format: { places: 2 } },
+                        { fieldName: "Voxel.Depth", label: "Elevation (mAHD)", format: { places: 1 } }
+                    ]
+                }]
+            };
+            scene = new WebScene({
+                portalItem: { id: "0fd2e8fc2f0e4433b2695601c94a2464" },
+                basemap: "hybrid",
+                layers: [voxelLayer]
+            });
+            view = new SceneView({
+                container: "viewDiv",
+                map: scene,
+                // REMOVED: Custom camera initialization; using WebScene's default
+                popup: { dockEnabled: true, dockOptions: { position: "top-right", breakpoint: false } }
+            });
+
+            setSliders("min", false);
+
+            view.when(function() {
+                // Capture the initial camera position from the loaded WebScene
+                initialCameraPosition = view.camera.clone();
+
+                hideLoadingScreen();
+                setNavigation2D(); // Default to 2D navigation initially
+
+                // Find multipatch layer
+                multipatchLayer = scene.layers.find(l => l.title === "AEM_Tool_multipatch_WSL1");
+
+                // Configure popup for multipatchLayer
+                if (multipatchLayer) {
+                    multipatchLayer.popupEnabled = true;
+                    multipatchLayer.popupTemplate = {
+                        title: "Transect information",
+                        content: [{
+                            type: "fields",
+                            fieldInfos: [
+                                { fieldName: "Name", label: "Survey line" }
+                            ]
+                        }]
+                    };
+                    multipatchLayer.visible = true;
+                }
+
+                // Show multipatch loading before its layer view is loaded
+                showMultipatchLoading();
+
+                voxelLayer.load().then(() => {
+                    setupVoxel(VoxelSlice);
+                    hideVoxelMiniLoading();
+                }).catch(error => {
+                    console.error("VoxelLayer failed to load:", error);
+                    hideVoxelMiniLoading();
+                });
+
+                // ----------- 2D/3D Mode Switching -----------
+
+                window.setView3D = function () {
+                    is3DMode = true;
+                    floatingSliders.classList.remove('hidden');
+                    // No view.goTo - keep current camera position/tilt/heading
+                    setNavigation3D();
+
+                    // Hide multipatch completely and clear highlight
+                    if (multipatchLayer) multipatchLayer.visible = false;
+                    if (highlightHandle) { highlightHandle.remove(); highlightHandle = null; }
+                    if (clickHighlightHandle) { clickHighlightHandle.remove(); clickHighlightHandle = null; } // Clear click highlight
+                    closeDrawerPanel();
+                    hideMultipatchLoading(); // Ensure hidden when switching to 3D
+                    hideAttachmentLoading(); // Ensure hidden when switching to 3D
+
+
+                    // Voxel visible and sliders enabled
+                    if (voxelLayer) {
+                        voxelLayer.opacity = 1;
+                        setSliders("max", true);
+                        if (zSlice && ySlice) {
+                            zSlice.point[2] = zMax;
+                            ySlice.point[1] = 0;
+                            voxelLayer.getVolumeStyle().slices = [zSlice, ySlice];
+                            document.getElementById("sliceZAxisSlider").value = zMax;
+                            document.getElementById("sliceYAxisSlider").value = yMax;
+                        }
+                        var exaggerationSlider = document.getElementById("exaggerationSlider");
+                        var exaggerationValue = document.getElementById("exaggerationValue");
+                        var exaggeration = parseFloat(exaggerationSlider.value);
+                        exaggerationValue.textContent = exaggeration;
+                        var newStyles = voxelLayer.volumeStyles.clone();
+                        var style0 = newStyles.getItemAt(0);
+                        style0.verticalExaggeration = exaggeration;
+                        style0.slices = voxelLayer.getVolumeStyle().slices;
+                        voxelLayer.volumeStyles = newStyles;
+                    }
+                };
+
+                window.setView2D = function () {
+                    is3DMode = false;
+                    floatingSliders.classList.add('hidden');
+                    // No view.goTo - keep current camera position/tilt/heading
+                    setNavigation2D();
+
+                    // Show multipatch again
+                    if (multipatchLayer) multipatchLayer.visible = true;
+                    setSliders("min", false);
+                    hideVoxelMiniLoading();
+                    hideMultipatchLoading(); // Ensure hidden when switching to 2D
+                    hideAttachmentLoading(); // Ensure hidden when switching to 2D
+
+                    if (voxelLayer) {
+                        voxelLayer.opacity = 0.01;
+                        if (zSlice && ySlice) {
+                            zSlice.point[2] = 0;
+                            ySlice.point[1] = yMax;
+                            voxelLayer.getVolumeStyle().slices = [zSlice, ySlice];
+                            document.getElementById("sliceZAxisSlider").value = 0;
+                            document.getElementById("sliceYAxisSlider").value = 0;
+                            document.getElementById("exaggerationSlider").value = 1;
+                            document.getElementById("exaggerationValue").textContent = 1;
+                        }
+                    }
+                };
+
+                // ----------- Feature Highlight on Hover (2D only) -----------
+
+                if (multipatchLayer) {
+                    view.whenLayerView(multipatchLayer).then(function(layerView) {
+                        // Hide multipatch loading once the layer view is loaded
+                        hideMultipatchLoading();
+
+                        view.on("pointer-move", function(event) {
+                            if (is3DMode || !multipatchLayer.visible) {
+                                if (highlightHandle) { highlightHandle.remove(); highlightHandle = null; }
+                                return;
+                            }
+                            view.hitTest(event, { include: [multipatchLayer] }).then(function(response) {
+                                let found = false;
+                                for (let res of response.results) {
+                                    let g = res.graphic, objId = g.attributes?.[multipatchLayer.objectIdField];
+                                    if (objId) {
+                                        found = true;
+                                        if (highlightHandle) highlightHandle.remove();
+                                        highlightHandle = layerView.highlight([objId]);
+                                        break;
+                                    }
+                                }
+                                if (!found && highlightHandle) { highlightHandle.remove(); highlightHandle = null; }
+                            });
+                        });
+                    });
+                }
+
+                // ----------- Attachment panel logic (2D only) -----------
+
+                // Click event for multipatch and attachment loading
+                view.on("click", async (e) => {
+                    if (!is3DMode && multipatchLayer && multipatchLayer.visible) {
+                        // Clear any previous click highlight
+                        if (clickHighlightHandle) {
+                            clickHighlightHandle.remove();
+                            clickHighlightHandle = null;
+                        }
+
+                        const { results } = await view.hitTest(e, { include: [multipatchLayer] });
+                        let multipatchClicked = false;
+                        let attachmentToLoad = false;
+
+                        for (let res of results) {
+                            const lyr = res.graphic.layer;
+                            const graphic = res.graphic;
+
+                            // Check if the clicked graphic is from the multipatch layer
+                            if (lyr.title === "AEM_Tool_multipatch_WSL1" && graphic.attributes?.[lyr.objectIdField]) {
+                                multipatchClicked = true;
+
+                                // Apply a temporary highlight for click confirmation
+                                view.whenLayerView(lyr).then(function(layerView) {
+                                    clickHighlightHandle = layerView.highlight([graphic.attributes[lyr.objectIdField]], {
+                                        color: [0, 255, 255, 1] // Cyan color for click highlight
+                                    });
+                                    // Remove the highlight after a short delay
+                                    setTimeout(() => {
+                                        if (clickHighlightHandle) {
+                                            clickHighlightHandle.remove();
+                                            clickHighlightHandle = null;
+                                        }
+                                    }, 800); // Blink for 0.8 seconds
+                                });
+
+                                // Now, check if this specific multipatch supports attachments and load it
+                                if (lyr.capabilities?.data?.supportsAttachment) {
+                                    attachmentToLoad = true;
+                                    showAttachmentLoading(); // Show spinner only if an attachment is expected
+                                    showAttachment(lyr, graphic.attributes[lyr.objectIdField]);
+                                }
+                                break; // Only process the first found multipatch
+                            }
+                        }
+
+                        // If a multipatch was clicked but it didn't trigger an attachment load, hide the spinner
+                        // (because showAttachmentLoading() might have been called, but showAttachment() didn't take over)
+                        if (multipatchClicked && !attachmentToLoad) {
+                             hideAttachmentLoading();
+                        }
+                        // If no multipatch was clicked at all, ensure spinner is hidden
+                        else if (!multipatchClicked) {
+                            hideAttachmentLoading();
+                        }
+                    } else if (is3DMode) { // If in 3D mode, just ensure attachment panel is closed
+                        closeDrawerPanel();
+                        hideAttachmentLoading();
+                    }
+                });
+            });
+
+            function setupVoxel(VoxelSlice) {
+                if (!voxelLayer || !voxelLayer.loaded) return;
+                const vol = voxelLayer.getVolume();
+                zMax = vol.sizeInVoxels[2] - 1;
+                yMax = vol.sizeInVoxels[1] - 1;
+                const zSlider = document.getElementById("sliceZAxisSlider");
+                const ySlider = document.getElementById("sliceYAxisSlider");
+                const exaggerationSlider = document.getElementById("exaggerationSlider");
+                const exaggerationValue = document.getElementById("exaggerationValue");
+                const zLabel = document.getElementById("zElevationValue");
+                const minElevation = 26.0, maxElevation = 396.0;
+                zSlider.max = zMax; ySlider.max = yMax;
+                zSlice = new VoxelSlice({ orientation: 0, point: [0, 0, zMax] });
+                ySlice = new VoxelSlice({ orientation: 174, tilt: 90, point: [0, 0, 0] });
+                voxelLayer.getVolumeStyle().slices = [zSlice, ySlice];
+                function getElevation(index) {
+                    return minElevation + (index / zMax) * (maxElevation - minElevation);
+                }
+                function updateZSlider(index) {
+                    zSlice.point[2] = +index;
+                    if (voxelLayer.visible) voxelLayer.getVolumeStyle().slices = [zSlice, ySlice];
+                    zLabel.textContent = getElevation(index).toFixed(1) + " m";
+                }
+                function updateYSlider(sliderValue) {
+                    const yIndex = yMax - sliderValue;
+                    ySlice.point[1] = yIndex;
+                    if (voxelLayer.visible) voxelLayer.getVolumeStyle().slices = [zSlice, ySlice];
+                }
+                zSlider.oninput = () => updateZSlider(zSlider.value);
+                ySlider.oninput = () => updateYSlider(ySlider.value);
+                exaggerationSlider.oninput = () => {
+                    const currentSlices = voxelLayer.getVolumeStyle().slices;
+                    const newStyles = voxelLayer.volumeStyles.clone();
+                    const style0 = newStyles.getItemAt(0);
+                    style0.verticalExaggeration = exaggerationSlider.value;
+                    style0.slices = currentSlices;
+                    voxelLayer.volumeStyles = newStyles;
+                    exaggerationValue.textContent = exaggerationSlider.value;
+                };
+                setSliders("min", false);
+                updateZSlider(0);
+                updateYSlider(yMax);
+                exaggerationSlider.value = 1;
+                exaggerationValue.textContent = 1;
+                let initialStyles = voxelLayer.volumeStyles.clone();
+                let initialStyle0 = initialStyles.getItemAt(0);
+                initialStyle0.verticalExaggeration = 1;
+                voxelLayer.volumeStyles = initialStyles;
+            }
+        });
+
+        // --- Drawer Panel logic ---
+        const attachmentsPanel = document.getElementById('attachmentsPanel');
+        const drawerHandle = document.getElementById('drawerHandle');
+        const img = document.getElementById("attachmentImage");
+        const container = document.getElementById("imageContainer");
+        let drawerOpen = false, animating = false;
+
+        function openDrawerPanel() {
+            if (animating) return;
+            animating = true;
+            drawerHandle.disabled = true;
+            attachmentsPanel.classList.add('open');
+            drawerOpen = true;
+            setTimeout(() => { drawerHandle.disabled = false; animating = false; }, 350);
+        }
+        function closeDrawerPanel() {
+            if (animating) return;
+            animating = true;
+            drawerHandle.disabled = true;
+            attachmentsPanel.classList.remove('open');
+            drawerOpen = false;
+            setTimeout(() => { drawerHandle.disabled = false; animating = false; }, 350);
+            img.src = ""; img.style.display = "none";
+            hideAttachmentLoading(); // Ensure attachment spinner is hidden when drawer closes
+        }
+        drawerHandle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (drawerOpen) closeDrawerPanel();
+            else openDrawerPanel();
+        });
+
+        let currentZoom = 1.0, minZoom = 1.0, maxZoom = 3.0, zoomStep = 0.33;
+        let isDragging = false, startX = 0, startY = 0, imgOffsetX = 0, imgOffsetY = 0;
+
+        function setImageTransform() {
+            img.style.transform = `translate(-50%, -50%) scale(${currentZoom}) translate(${imgOffsetX}px,${imgOffsetY}px)`;
+        }
+        function clampOffsets() {
+            if (!img.naturalWidth || !img.naturalHeight) return;
+            const cW = container.clientWidth;
+            const cH = container.clientHeight - parseFloat(getComputedStyle(container).paddingTop);
+            const scaledW = img.naturalWidth * currentZoom, scaledH = img.naturalHeight * currentZoom;
+            const maxOffsetX = Math.max(0, (scaledW - cW) / 2 / currentZoom);
+            const maxOffsetY = Math.max(0, (scaledH - cH) / 2 / currentZoom);
+            imgOffsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, imgOffsetX));
+            imgOffsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, imgOffsetY));
+        }
+        container.onmousedown = function(e) {
+            const handleRect = drawerHandle.getBoundingClientRect();
+            if (e.clientY < handleRect.bottom && e.clientX > handleRect.left && e.clientX < handleRect.right) return;
+            if (currentZoom > minZoom && img.style.display === "block") {
+                isDragging = true;
+                container.style.cursor = "grabbing";
+                startX = e.clientX;
+                startY = e.clientY;
+            }
+        };
+        window.onmousemove = function(e) {
+            if (isDragging) {
+                let dx = (e.clientX - startX) / currentZoom;
+                let dy = (e.clientY - startY) / currentZoom;
+                imgOffsetX += dx;
+                imgOffsetY += dy;
+                clampOffsets();
+                setImageTransform();
+                startX = e.clientX;
+                startY = e.clientY;
+            }
+        };
+        window.onmouseup = function() {
+            if (isDragging) {
+                isDragging = false;
+                container.style.cursor = "";
+            }
+        };
+        container.onmouseleave = function() {
+            if (isDragging) {
+                isDragging = false;
+                container.style.cursor = "";
+            }
+        };
+        document.getElementById("zoomInBtn").onclick = function() {
+            if (currentZoom < maxZoom) {
+                currentZoom = Math.min(currentZoom + zoomStep, maxZoom);
+                clampOffsets();
+                setImageTransform();
+                updateZoomBtns();
+            }
+        };
+        document.getElementById("zoomOutBtn").onclick = function() {
+            if (currentZoom > minZoom) {
+                currentZoom = Math.max(currentZoom - zoomStep, minZoom);
+                if (currentZoom === minZoom) { imgOffsetX = 0; imgOffsetY = 0; }
+                clampOffsets();
+                setImageTransform();
+                updateZoomBtns();
+            }
+        };
+        function updateZoomBtns() {
+            document.getElementById("zoomInBtn").disabled = currentZoom >= maxZoom;
+            document.getElementById("zoomOutBtn").disabled = currentZoom <= minZoom + 0.01;
+            container.style.cursor = (currentZoom > minZoom) ? "grab" : "default";
+        }
+        function getFitZoom() {
+            if (!img.naturalWidth || !img.naturalHeight) return 1;
+            const cW = container.clientWidth;
+            const cH = container.clientHeight - parseFloat(getComputedStyle(container).paddingTop);
+            const wZoom = cW / img.naturalWidth;
+            const hZoom = cH / img.naturalHeight;
+            return Math.min(wZoom, hZoom, 1);
+        }
+        function showAttachment(layer, objectId) {
+            // Force redraw/re-evaluation
+            img.src = ""; // Clear src to ensure onload fires even if new URL is same as old
+            img.style.display = "none";
+
+            // Reset zoom/pan
+            currentZoom = 1.0; minZoom = 1.0; imgOffsetX = 0; imgOffsetY = 0;
+            setImageTransform();
+            updateZoomBtns();
+
+            layer.queryAttachments({ objectIds: [objectId], attachmentTypes: ["image/png"] }).then(results => {
+                const att = results[objectId]?.[0];
+                if (!att) {
+                    closeDrawerPanel();
+                    hideAttachmentLoading();
+                    return;
+                }
+
+                // Remove previous handlers to prevent stale closures and ensure fresh bind
+                img.onload = null;
+                img.onerror = null;
+
+                img.onload = function() {
+                    minZoom = getFitZoom();
+                    currentZoom = Math.min(minZoom * 1.04, maxZoom);
+                    imgOffsetX = 0; imgOffsetY = 0;
+                    clampOffsets();
+                    setImageTransform();
+                    img.style.display = "block";
+                    updateZoomBtns();
+                    openDrawerPanel();
+                    hideAttachmentLoading();
+                };
+                img.onerror = function() {
+                    console.error("Failed to load attachment image:", att.url);
+                    closeDrawerPanel();
+                    hideAttachmentLoading();
+                };
+
+                // Append a unique timestamp to force reload/re-evaluation
+                const cacheBusterUrl = att.url.includes("?") ? `${att.url}&_t=${Date.now()}` : `${att.url}?_t=${Date.now()}`;
+                img.src = cacheBusterUrl;
+
+            }).catch(error => {
+                console.error("Error querying attachments:", error);
+                closeDrawerPanel();
+                hideAttachmentLoading();
+            });
+        }
+        window.addEventListener("resize", () => {
+            if (img.style.display === "block" && img.naturalWidth && img.naturalHeight) {
+                minZoom = getFitZoom();
+                if (currentZoom < minZoom) currentZoom = minZoom;
+                imgOffsetX = 0; imgOffsetY = 0;
+                clampOffsets();
+                setImageTransform();
+                updateZoomBtns();
+            }
+        });
+        window.addEventListener('keydown', function(e) {
+            if (e.key === "Escape" && drawerOpen) closeDrawerPanel();
+        });
+        window.addEventListener('load', () => {
+            closeDrawerPanel();
+        });
+    </script>
+</body>
+</html>
